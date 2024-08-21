@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/creachadair/jrpc2/channel"
@@ -14,15 +14,17 @@ import (
 	"github.com/creachadair/jrpc2/server"
 )
 
-// CountService provides a method to count characters in a string.
 type CountService struct {
-	counters []int
-	mu       []sync.Mutex
-	shards   int
+	counters [numShards]Counter
 }
 
-const serviceAddr = "/tmp/service.sock4"
-const numShards = 16
+type Counter struct {
+	value int64
+	_     [120]byte // Padding (optimized for Mac ARM64)
+}
+
+const serviceAddr = "/tmp/service.sock"
+const numShards = 64
 
 func main() {
 	// Remove any existing socket file
@@ -38,21 +40,16 @@ func main() {
 	}
 	defer lst.Close()
 
-	// Initialize the service with sharded counters
-	service := &CountService{
-		counters: make([]int, numShards),
-		mu:       make([]sync.Mutex, numShards),
-		shards:   numShards,
-	}
+	// Initialize the service with padded counters (initialized with 0 values, when nothing added)
+	service := &CountService{}
 
 	// Set up a service procedure
 	svc := server.Static(handler.Map{
 		"Count": handler.New(func(ctx context.Context, req []string) (int, error) {
-			// Determine which shard to use
-			shard := len(req[0]) % service.shards
-			service.mu[shard].Lock()
-			service.counters[shard]++
-			service.mu[shard].Unlock()
+			shard := len(req[0]) % numShards
+			counter := &service.counters[shard]
+
+			atomic.AddInt64(&counter.value, 1)
 
 			fmt.Println("Received request:", req)
 			return len(req[0]), nil
@@ -75,9 +72,9 @@ func main() {
 	fmt.Println("\nServer is shutting down...")
 
 	// Aggregate the total number of messages received
-	totalMessages := 0
-	for i := 0; i < service.shards; i++ {
-		totalMessages += service.counters[i]
+	totalMessages := int64(0)
+	for i := 0; i < numShards; i++ {
+		totalMessages += service.counters[i].value
 	}
 
 	fmt.Printf("Total messages received: %d\n", totalMessages)

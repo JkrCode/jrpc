@@ -13,7 +13,7 @@ import (
 	"github.com/creachadair/jrpc2/channel"
 )
 
-const serviceAddr = "/tmp/service.sock4"
+const serviceAddr = "/tmp/service.sock"
 
 func main() {
 	ctx := context.Background()
