@@ -27,7 +27,7 @@ const serviceAddr = "/tmp/service.sock"
 const numShards = 64
 
 func main() {
-	// Remove any existing socket file
+	// Remove any existing socket
 	if _, err := os.Stat(serviceAddr); err == nil {
 		os.Remove(serviceAddr)
 	}
@@ -43,7 +43,7 @@ func main() {
 	// Initialize the service with padded counters (initialized with 0 values, when nothing added)
 	service := &CountService{}
 
-	// Set up a service procedure
+	//procedure
 	svc := server.Static(handler.Map{
 		"Count": handler.New(func(ctx context.Context, req []string) (int, error) {
 			shard := len(req[0]) % numShards
