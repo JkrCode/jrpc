@@ -6,25 +6,16 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
+
+	"jrpcServer/handlers"
 
 	"github.com/creachadair/jrpc2/channel"
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/server"
 )
 
-type CountService struct {
-	counters [numShards]Counter
-}
-
-type Counter struct {
-	value int64
-	_     [120]byte // Padding (optimized for Mac ARM64)
-}
-
 const serviceAddr = "/tmp/service.sock"
-const numShards = 64
 
 func main() {
 	// Remove any existing socket
@@ -40,42 +31,34 @@ func main() {
 	}
 	defer lst.Close()
 
-	// Initialize the service with padded counters (initialized with 0 values, when nothing added)
-	service := &CountService{}
+	messageCounter := make(chan struct{})
 
-	//procedure
 	svc := server.Static(handler.Map{
-		"Count": handler.New(func(ctx context.Context, req []string) (int, error) {
-			shard := len(req[0]) % numShards
-			counter := &service.counters[shard]
-
-			atomic.AddInt64(&counter.value, 1)
-
-			fmt.Println("Received request:", req)
-			return len(req[0]), nil
-		}),
+		"Count": handler.New(handlers.Count(messageCounter)),
 	})
 
-	// Handle interrupt signal (Ctrl+C)
+	// Handle shutdown signals
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	// Run the server in a separate goroutine
 	ctx := context.Background()
 	go func() {
 		fmt.Println("Server is running...")
 		server.Loop(ctx, server.NetAccepter(lst, channel.Line), svc, nil)
 	}()
 
-	// Wait for the interrupt signal
+	// Aggregate the total number of messages received
+	totalMessages := 0
+	go collectCounts(messageCounter, &totalMessages)
+
 	<-c
 	fmt.Println("\nServer is shutting down...")
-
-	// Aggregate the total number of messages received
-	totalMessages := int64(0)
-	for i := 0; i < numShards; i++ {
-		totalMessages += service.counters[i].value
-	}
-
 	fmt.Printf("Total messages received: %d\n", totalMessages)
+}
+
+func collectCounts( messageCounter chan struct{}, totalMessages *int ){
+	// ranging over a channel does mean to continiously pulling values from the channel and 
+	for range messageCounter {
+				*totalMessages++
+			}
 }

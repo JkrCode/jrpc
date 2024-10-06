@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Path to the compiled Go client application
-CLIENT_PATH="./jrpcClient"  # Update this with the correct path if needed
+CLIENT_PATH="./main"  # Update this with the correct path if needed
 
 # Function to send messages from a client
 send_messages() {
